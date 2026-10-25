@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 @Service
 public class InventarioService {
@@ -55,10 +56,10 @@ public class InventarioService {
     }
 
     private String resultadoDelMovimiento(Producto producto) {
-        if (!calculadoraReorden.necesitaReorden(producto)) return "OK_" + producto.getStock();
-        int cantidadReorden = calculadoraReorden.cantidadAReordenar(producto);
-        alertarBajoStock(producto, cantidadReorden);
-        return "OK_BAJO_STOCK_REORDEN_" + cantidadReorden;
+        OptionalInt cantidadReorden = calculadoraReorden.cantidadAReordenar(producto);
+        if (cantidadReorden.isEmpty()) return "OK_" + producto.getStock();
+        alertarBajoStock(producto, cantidadReorden.getAsInt());
+        return "OK_BAJO_STOCK_REORDEN_" + cantidadReorden.getAsInt();
     }
 
     private void alertarBajoStock(Producto producto, int cantidadReorden) {

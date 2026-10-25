@@ -3,36 +3,55 @@
 **Post-contenido — Unidad 11 · Patrones de Diseño de Software**
 Juan Sebastián Gamboa Cristancho · Universidad de Santander (UDES) · Cúcuta, 2026
 
-Kata de refactorización sobre un servicio de inventario en Spring Boot. En la **Parte 1** se blindan con pruebas de caracterización dos code smells reales (un *Long Method* y un *Switch Statement* duplicado) y solo después se refactorizan, verificando con las mismas pruebas, sin modificarlas, que el comportamiento observable no cambia.
+Kata de refactorización sobre un servicio de inventario en Spring Boot. En la **Parte 1** se blindan con pruebas de caracterización dos code smells reales (un *Long Method* y un *Switch Statement* duplicado) y solo después se refactorizan, verificando con las mismas pruebas, sin modificarlas, que el comportamiento observable no cambia. En la **Parte 2** se agrega un módulo de reportes que introduce una dependencia cíclica entre paquetes; se diagnostica con una prueba de arquitectura (ArchUnit), se resuelve invirtiendo la dependencia y se confirma, con las mismas pruebas de la Parte 1, que el comportamiento sigue intacto.
+
+## Resultado en una línea
+
+| Smell | Antes | Después |
+|-------|-------|---------|
+| Long Method en `actualizarInventario()` | 38 líneas, CC 13, 5 responsabilidades | 11 líneas, CC 5, delega en 6 métodos y `CalculadoraReorden` |
+| Switch duplicado sobre `TipoProducto` | 2 clases, 8 `case` + 2 `default` | 0: polimorfismo en el `enum` |
+| Ciclo `inventario ↔ reportes` | ArchUnit en rojo y la aplicación no arranca (ciclo de beans) | ArchUnit en verde, dependencia solo `reportes → inventario` |
+| Pruebas de caracterización (21) | escritas antes de refactorizar | **sin modificar** y en verde en el estado final (27/27 pruebas) |
 
 ## Estructura del proyecto
 
 ```
 gamboa-post1-u11/
 ├── pom.xml                                  ← Spring Boot 3.5.6, Java 17, JUnit 5, JaCoCo
-├── docs/                                    ← capturas de JaCoCo (antes / después)
+├── docs/                                    ← capturas de JaCoCo y salidas de pruebas (evidencias/)
 └── src/
     ├── main/java/com/universidad/refactoringu11/
     │   ├── RefactoringU11Application.java
-    │   └── inventario/
-    │       ├── Producto.java
-    │       ├── TipoProducto.java            ← enum con comportamiento por tipo
-    │       ├── InventarioService.java       ← actualizarInventario() descompuesto
-    │       ├── CalculadoraReorden.java      ← política de reabastecimiento (extraída)
-    │       ├── ClasificadorProducto.java    ← delega en TipoProducto
-    │       └── EtiquetadoProducto.java      ← delega en TipoProducto
-    └── test/java/com/universidad/refactoringu11/
-        ├── RefactoringU11ApplicationTests.java
-        └── inventario/                      ← pruebas de caracterización (sin modificar)
-            ├── InventarioServiceTest.java   ← 13 pruebas
-            ├── ClasificadorProductoTest.java← 4 pruebas
-            └── EtiquetadoProductoTest.java  ← 4 pruebas
+    │   ├── inventario/
+    │   │   ├── NotificadorBajoStock.java    ← puerto (interfaz) para avisar bajo stock
+    │   │   ├── Producto.java
+    │   │   ├── TipoProducto.java            ← enum con comportamiento por tipo
+    │   │   ├── InventarioService.java       ← actualizarInventario() descompuesto
+    │   │   ├── CalculadoraReorden.java      ← política de reabastecimiento (extraída)
+    │   │   ├── ClasificadorProducto.java    ← delega en TipoProducto
+    │   │   └── EtiquetadoProducto.java      ← delega en TipoProducto
+    │   └── reportes/
+    │       └── ReporteBajoStockService.java ← implementa NotificadorBajoStock
+    └── test/
+        ├── resources/archunit.properties
+        └── java/com/universidad/refactoringu11/
+            ├── RefactoringU11ApplicationTests.java
+            ├── ArquitecturaPaquetesTest.java    ← ArchUnit: paquetes libres de ciclos
+            ├── inventario/
+            │   ├── InventarioServiceTest.java   ← 13 pruebas de caracterización (sin modificar)
+            │   ├── ClasificadorProductoTest.java← 4 pruebas de caracterización (sin modificar)
+            │   ├── EtiquetadoProductoTest.java  ← 4 pruebas de caracterización (sin modificar)
+            │   └── NotificacionBajoStockTest.java ← 2 pruebas del puerto (Parte 2)
+            └── reportes/
+                └── ReporteBajoStockServiceTest.java ← 2 pruebas del reporte (Parte 2)
 ```
 
 ## Cómo ejecutar
 
 ```bash
-./mvnw test                         # pruebas + reporte JaCoCo
+./mvnw test                                   # 27 pruebas + reporte JaCoCo
+./mvnw test -Dtest=ArquitecturaPaquetesTest    # solo la prueba de arquitectura
 open target/site/jacoco/index.html  # cobertura y complejidad ciclomática por método
 ```
 
@@ -74,7 +93,7 @@ Las pruebas se escribieron y ejecutaron en verde sobre el código original, en u
 
 **Cobertura de la red de seguridad sobre el código original:** 100 % de las ramas de `actualizarInventario()` (24/24), según JaCoCo. Cada camino del método quedó ejercitado antes de tocarlo.
 
-**Las pruebas no se modificaron en ningún momento:** `git diff e65a0ca HEAD -- src/test` no muestra cambios.
+**Las pruebas no se modificaron en ningún momento:** `git diff e65a0ca HEAD` sobre `InventarioServiceTest`, `ClasificadorProductoTest` y `EtiquetadoProductoTest` no muestra cambios, ni al cierre de la Parte 1 ni en el estado final del repositorio.
 
 ## Resultado de `mvn test` en cada etapa
 
@@ -277,8 +296,139 @@ Salida completa en [`docs/evidencias/ciclo-beans-spring.txt`](docs/evidencias/ci
 | `ArquitecturaPaquetesTest` | ❌ ciclo `inventario → reportes → inventario` |
 | `RefactoringU11ApplicationTests.contextLoads` | ❌ ciclo de beans `inventarioService ↔ reporteBajoStockService` |
 
+## Resolución: inversión de dependencias con `NotificadorBajoStock`
+
+Se aplicó el Principio de Inversión de Dependencias: el paquete de mayor nivel (`inventario`) deja de depender del de menor nivel (`reportes`) y ambos pasan a depender de una abstracción que vive junto al de mayor nivel.
+
+```java
+// inventario/NotificadorBajoStock.java — el puerto lo define el dominio
+@FunctionalInterface
+public interface NotificadorBajoStock {
+    void notificar(Producto producto, int cantidadReorden);
+}
+```
+
+```java
+// inventario/InventarioService.java — ya no importa ninguna clase de reportes
+private NotificadorBajoStock notificador; // depende de la abstraccion, no de reportes
+
+@Autowired(required = false)
+public void setNotificador(NotificadorBajoStock notificador) { this.notificador = notificador; }
+
+private void alertarBajoStock(Producto producto, int cantidadReorden) {
+    if (notificador != null) {
+        notificador.notificar(producto, cantidadReorden);
+    }
+    System.out.println("ALERTA: " + producto.getNombre() + " bajo stock minimo. Reordenar " + cantidadReorden + " unidades.");
+}
+```
+
+```java
+// reportes/ReporteBajoStockService.java — implementa el puerto: reportes -> inventario
+@Service
+public class ReporteBajoStockService implements NotificadorBajoStock {
+    private final Map<Long, String> alertasPorProducto = new LinkedHashMap<>();
+
+    @Override
+    public void notificar(Producto producto, int cantidadReorden) { /* registra la alerta */ }
+
+    public String generarReporte() { /* arma el reporte con las alertas registradas */ }
+}
+```
+
+**Ajuste respecto al enunciado: el reporte ya no recibe `InventarioService`.** El enunciado conserva el constructor `ReporteBajoStockService(InventarioService)`. Con ese constructor, el ciclo de **paquetes** desaparece, pero el ciclo de **beans** persiste: `InventarioService` necesita un `NotificadorBajoStock` (que es `ReporteBajoStockService`), y este necesitaría a `InventarioService`, así que `contextLoads` seguiría fallando. Por eso el reporte se construye a partir de las notificaciones que recibe, sin volver a consultar al inventario. El método `productosBajoStockMinimo()`, agregado en el Paso 1 solo para el reporte, quedó sin uso y se eliminó para no dejar código muerto.
+
+### Diagrama de paquetes — después
+
+```mermaid
+flowchart LR
+    subgraph inventario
+        IS[InventarioService]
+        NB(["«interface» NotificadorBajoStock"])
+        IS -- usa --> NB
+    end
+    subgraph reportes
+        RS[ReporteBajoStockService]
+    end
+    RS -. implementa .-> NB
+```
+
+```
+   ┌──────────────────────────────────────────┐
+   │ inventario                               │
+   │   InventarioService ──usa──▶ «interface» │      ┌──────────────────────────┐
+   │                        NotificadorBajoStock ◀───│ reportes                 │
+   └──────────────────────────────────────────┘ impl │   ReporteBajoStockService│
+                                                     └──────────────────────────┘
+                 Una sola dirección: reportes → inventario (sin ciclo)
+```
+
+| Dependencia | Antes | Después |
+|-------------|-------|---------|
+| `inventario → reportes` | 3 (campo, setter, llamada a `generarReporte()`) | **0** (`grep -rn "refactoringu11.reportes" src/main/java/.../inventario` no devuelve resultados) |
+| `reportes → inventario` | 6 (constructor, campo, `productosBajoStockMinimo()`, 3 getters de `Producto`) | solo `NotificadorBajoStock` y `Producto` |
+| Ciclo de beans de Spring | `inventarioService ↔ reporteBajoStockService` | ninguno: `ReporteBajoStockService` no tiene dependencias |
+
+### Evidencia — `ArquitecturaPaquetesTest` en verde
+
+```
+$ ./mvnw test -Dtest=ArquitecturaPaquetesTest
+[INFO] Running com.universidad.refactoringu11.ArquitecturaPaquetesTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+## Confirmación: las pruebas de la Parte 1 siguen en verde sin modificarse
+
+```
+$ ./mvnw test
+[INFO] Running com.universidad.refactoringu11.reportes.ReporteBajoStockServiceTest   Tests run: 2,  Failures: 0
+[INFO] Running com.universidad.refactoringu11.RefactoringU11ApplicationTests         Tests run: 1,  Failures: 0
+[INFO] Running com.universidad.refactoringu11.ArquitecturaPaquetesTest               Tests run: 1,  Failures: 0
+[INFO] Running com.universidad.refactoringu11.inventario.ClasificadorProductoTest    Tests run: 4,  Failures: 0
+[INFO] Running com.universidad.refactoringu11.inventario.EtiquetadoProductoTest      Tests run: 4,  Failures: 0
+[INFO] Running com.universidad.refactoringu11.inventario.InventarioServiceTest       Tests run: 13, Failures: 0
+[INFO] Running com.universidad.refactoringu11.inventario.NotificacionBajoStockTest   Tests run: 2,  Failures: 0
+[INFO] Tests run: 27, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+```
+$ git diff e65a0ca HEAD --stat -- src/test/java/com/universidad/refactoringu11/inventario/InventarioServiceTest.java \
+      src/test/java/com/universidad/refactoringu11/inventario/ClasificadorProductoTest.java \
+      src/test/java/com/universidad/refactoringu11/inventario/EtiquetadoProductoTest.java
+(sin salida: los tres archivos son idénticos a como se escribieron en el Paso 2 de la Parte 1)
+```
+
+| Prueba | Con el ciclo | Después de invertir la dependencia |
+|--------|--------------|------------------------------------|
+| 21 pruebas de caracterización de la Parte 1 | ✅ verdes | ✅ verdes, sin modificar |
+| `ArquitecturaPaquetesTest` | ❌ ciclo detectado | ✅ verde |
+| `RefactoringU11ApplicationTests.contextLoads` | ❌ ciclo de beans | ✅ verde |
+| `NotificacionBajoStockTest` (2, nueva) | — | ✅ el inventario avisa por el puerto con la cantidad correcta y no avisa si el stock queda en el mínimo; usa una lambda como doble de prueba, sin Spring ni el paquete `reportes` |
+| `ReporteBajoStockServiceTest` (2, nueva) | — | ✅ reporte vacío y última alerta por producto en orden de llegada |
+| **Total** | 22 verdes, 2 en rojo | **27 de 27 en verde** |
+
+## Decisiones de diseño — Parte 2
+
+### Decisión de diseño 3 — `NotificadorBajoStock` vive en `inventario`, no en `reportes`
+
+La Guía de Contenido (sección 4.3) establece que «los paquetes de infraestructura dependen de dominio; dominio nunca depende de infraestructura». En este proyecto **`inventario` es el paquete de mayor nivel**: contiene el modelo y las reglas de negocio (`Producto`, `TipoProducto`, la política de reorden) y es estable, porque varios módulos pueden reaccionar a él. **`reportes` es de menor nivel**: es una forma particular de presentar información derivada del inventario y podría reemplazarse por un correo, un mensaje a una cola o un tablero sin que cambie ninguna regla de inventario.
+
+La interfaz expresa una necesidad del dominio («avisar que un producto quedó bajo el mínimo»), no un detalle de los reportes, así que pertenece a quien la necesita. Si se ubicara en `reportes`, `InventarioService` tendría que importarla desde ese paquete y la dependencia `inventario → reportes` seguiría existiendo: el ciclo no se rompería, solo cambiaría de clase. Ubicada en `inventario`, la flecha queda en una sola dirección, `reportes → inventario`, y el dominio no sabe cuántos ni cuáles notificadores existen.
+
+### Decisión de diseño 4 — Notificación por evento individual
+
+Se eligió `notificar(Producto producto, int cantidadReorden)`, un aviso por cada movimiento que deja un producto bajo el mínimo, en lugar de una notificación por lote como `notificar(List<Producto>)`:
+
+- **Coincide con el momento en que ocurre el hecho.** `actualizarInventario()` procesa un movimiento a la vez, así que el evento natural es individual: el inventario no necesita acumular productos ni decidir cuándo vaciar un lote, lo que habría agregado estado y una nueva responsabilidad a la clase que se acaba de simplificar en la Parte 1.
+- **Lleva el dato que solo el inventario conoce.** La `cantidadReorden` ya la calculó `CalculadoraReorden`; enviarla en el evento evita que `reportes` tenga que recalcularla, y con ello duplicar la política, o consultar de vuelta a `InventarioService`, que reintroduciría la dependencia y el ciclo de beans.
+- **Permite reaccionar de inmediato y simplifica las pruebas:** `NotificacionBajoStockTest` verifica el contrato con una lambda de una línea.
+
+**Cuándo convendría una notificación por lote:** si el inventario procesara cargas masivas, por ejemplo una importación de miles de movimientos o un cierre nocturno de existencias, o si el notificador fuera costoso por llamada (un correo, una API externa con límite de peticiones). En ese escenario un lote evita cientos de avisos individuales. Agregar ese método al puerto sería una extensión compatible, porque los notificadores actuales seguirían funcionando por evento.
+
 ## Herramientas utilizadas
 
 - Java 17 (compilado con JDK 25), Spring Boot 3.5.6, Maven Wrapper
-- JUnit 5, JaCoCo 0.8.13
+- JUnit 5, JaCoCo 0.8.13, ArchUnit 1.3.0
 - Git, GitHub

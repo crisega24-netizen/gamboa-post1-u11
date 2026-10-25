@@ -1,0 +1,23 @@
+# Salida de ./mvnw test tras el Paso 1 de la Parte 2 (modulo de reportes agregado)
+# RefactoringU11ApplicationTests.contextLoads -> ERROR. Las 21 pruebas de caracterizacion -> verdes.
+# [ERROR] Tests run: 22, Failures: 0, Errors: 1, Skipped: 0
+
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+The dependencies of some of the beans in the application context form a cycle:
+
+┌─────┐
+|  inventarioService
+↑     ↓
+|  reporteBajoStockService defined in file [target/classes/com/universidad/refactoringu11/reportes/ReporteBajoStockService.class]
+└─────┘
+
+
+Action:
+
+Relying upon circular references is discouraged and they are prohibited by default. Update your application to remove the dependency cycle between beans. As a last resort, it may be possible to break the cycle automatically by setting spring.main.allow-circular-references to true.

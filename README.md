@@ -202,7 +202,80 @@ Se eligió el `enum` con métodos por constante porque **el conjunto de tipos es
 
 # Parte 2 — Diagnóstico y resolución de acoplamiento entre paquetes
 
-*(En desarrollo.)*
+Se agregó un paquete `reportes` con `ReporteBajoStockService`, que genera un reporte de los productos bajo el stock mínimo consultando a `InventarioService`. Para que el inventario avise al reporte cuando detecta bajo stock, `InventarioService` recibe `ReporteBajoStockService` por setter (`@Autowired(required = false)`) y lo invoca en la rama de alerta.
+
+## Diagnóstico: el ciclo entre `inventario` y `reportes`
+
+El proyecto compila y las 21 pruebas de caracterización siguen en verde, porque construyen `InventarioService` con `new` y el reporte queda en `null`. El problema no es de comportamiento sino de arquitectura: los dos paquetes dependen uno del otro.
+
+```mermaid
+flowchart LR
+    subgraph inventario
+        IS[InventarioService]
+    end
+    subgraph reportes
+        RS[ReporteBajoStockService]
+    end
+    IS -- "import + setter + generarReporte()" --> RS
+    RS -- "constructor + productosBajoStockMinimo()" --> IS
+```
+
+```
+   ┌──────────────┐  importa ReporteBajoStockService   ┌──────────────┐
+   │  inventario  │ ─────────────────────────────────▶ │   reportes   │
+   │              │ ◀───────────────────────────────── │              │
+   └──────────────┘  importa InventarioService          └──────────────┘
+                       → CICLO: inventario → reportes → inventario
+```
+
+### Evidencia 1 — `ArquitecturaPaquetesTest` en rojo
+
+La prueba de arquitectura (`slices().matching("com.universidad.refactoringu11.(*)..").should().beFreeOfCycles()`) falla y ArchUnit enumera cada dependencia que forma el ciclo:
+
+```
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0 <<< FAILURE! -- in com.universidad.refactoringu11.ArquitecturaPaquetesTest
+
+Architecture Violation [Priority: MEDIUM] - Rule 'slices matching 'com.universidad.refactoringu11.(*)..' should be free of cycles' was violated (1 times):
+Cycle detected: Slice inventario ->
+                Slice reportes ->
+                Slice inventario
+  1. Dependencies of Slice inventario
+    - Field <...inventario.InventarioService.reporteBajoStockService> has type <...reportes.ReporteBajoStockService>
+    - Method <...inventario.InventarioService.setReporteBajoStockService(...reportes.ReporteBajoStockService)> has parameter of type <...reportes.ReporteBajoStockService>
+    - Method <...inventario.InventarioService.alertarBajoStock(...)> calls method <...reportes.ReporteBajoStockService.generarReporte()>
+  2. Dependencies of Slice reportes
+    - Constructor <...reportes.ReporteBajoStockService.<init>(...inventario.InventarioService)> has parameter of type <...inventario.InventarioService>
+    - Field <...reportes.ReporteBajoStockService.inventarioService> has type <...inventario.InventarioService>
+    - Method <...reportes.ReporteBajoStockService.generarReporte()> calls method <...inventario.InventarioService.productosBajoStockMinimo()>
+    - Method <...reportes.ReporteBajoStockService.generarReporte()> calls method <...inventario.Producto.getNombre()> (y getStock(), getStockMinimo())
+```
+
+Salida completa en [`docs/evidencias/archunit-ciclo-rojo.txt`](docs/evidencias/archunit-ciclo-rojo.txt).
+
+### Evidencia 2 — el ciclo también existe en tiempo de ejecución
+
+El enunciado describe el ciclo como un problema que «no rompe ninguna prueba». Eso es cierto para las pruebas de negocio, pero no para la aplicación: desde Spring Boot 2.6 las referencias circulares entre beans están prohibidas por defecto, y la prueba `contextLoads` generada por Spring Initializr falló con la aplicación incapaz de arrancar:
+
+```
+[ERROR] Tests run: 22, Failures: 0, Errors: 1, Skipped: 0
+
+APPLICATION FAILED TO START
+
+The dependencies of some of the beans in the application context form a cycle:
+┌─────┐
+|  inventarioService
+↑     ↓
+|  reporteBajoStockService
+└─────┘
+```
+
+Salida completa en [`docs/evidencias/ciclo-beans-spring.txt`](docs/evidencias/ciclo-beans-spring.txt). Spring sugiere como «último recurso» `spring.main.allow-circular-references=true`; se descartó porque oculta el síntoma sin corregir el diseño, del mismo modo que el `!= null` del setter oculta el colaborador en las pruebas.
+
+| Prueba | Estado con el ciclo |
+|--------|---------------------|
+| `InventarioServiceTest` (13), `ClasificadorProductoTest` (4), `EtiquetadoProductoTest` (4) | ✅ 21 en verde |
+| `ArquitecturaPaquetesTest` | ❌ ciclo `inventario → reportes → inventario` |
+| `RefactoringU11ApplicationTests.contextLoads` | ❌ ciclo de beans `inventarioService ↔ reporteBajoStockService` |
 
 ## Herramientas utilizadas
 

@@ -1,0 +1,22 @@
+# Salida de ./mvnw test -Dtest=ArquitecturaPaquetesTest con el modulo de reportes acoplado (Paso 2, Parte 2)
+
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.587 s <<< FAILURE! -- in com.universidad.refactoringu11.ArquitecturaPaquetesTest
+
+Architecture Violation [Priority: MEDIUM] - Rule 'slices matching 'com.universidad.refactoringu11.(*)..' should be free of cycles' was violated (1 times):
+Cycle detected: Slice inventario -> 
+                Slice reportes -> 
+                Slice inventario
+  1. Dependencies of Slice inventario
+    - Field <com.universidad.refactoringu11.inventario.InventarioService.reporteBajoStockService> has type <com.universidad.refactoringu11.reportes.ReporteBajoStockService> in (InventarioService.java:0)
+    - Method <com.universidad.refactoringu11.inventario.InventarioService.setReporteBajoStockService(com.universidad.refactoringu11.reportes.ReporteBajoStockService)> has parameter of type <com.universidad.refactoringu11.reportes.ReporteBajoStockService> in (InventarioService.java:0)
+    - Method <com.universidad.refactoringu11.inventario.InventarioService.alertarBajoStock(com.universidad.refactoringu11.inventario.Producto, int)> calls method <com.universidad.refactoringu11.reportes.ReporteBajoStockService.generarReporte()> in (InventarioService.java:81)
+  2. Dependencies of Slice reportes
+    - Constructor <com.universidad.refactoringu11.reportes.ReporteBajoStockService.<init>(com.universidad.refactoringu11.inventario.InventarioService)> has parameter of type <com.universidad.refactoringu11.inventario.InventarioService> in (ReporteBajoStockService.java:0)
+    - Field <com.universidad.refactoringu11.reportes.ReporteBajoStockService.inventarioService> has type <com.universidad.refactoringu11.inventario.InventarioService> in (ReporteBajoStockService.java:0)
+    - Method <com.universidad.refactoringu11.reportes.ReporteBajoStockService.generarReporte()> calls method <com.universidad.refactoringu11.inventario.InventarioService.productosBajoStockMinimo()> in (ReporteBajoStockService.java:19)
+    - Method <com.universidad.refactoringu11.reportes.ReporteBajoStockService.generarReporte()> calls method <com.universidad.refactoringu11.inventario.Producto.getNombre()> in (ReporteBajoStockService.java:25)
+    - Method <com.universidad.refactoringu11.reportes.ReporteBajoStockService.generarReporte()> calls method <com.universidad.refactoringu11.inventario.Producto.getStock()> in (ReporteBajoStockService.java:26)
+    - Method <com.universidad.refactoringu11.reportes.ReporteBajoStockService.generarReporte()> calls method <com.universidad.refactoringu11.inventario.Producto.getStockMinimo()> in (ReporteBajoStockService.java:27)
+
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
+[ERROR] BUILD FAILURE
